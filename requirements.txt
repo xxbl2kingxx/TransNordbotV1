@@ -1,5 +1,2 @@
 requests
-folium
-selenium
-webdriver-manager
-pillow
+flask

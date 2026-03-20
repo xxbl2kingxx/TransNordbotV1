@@ -1,17 +1,330 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <title>TransNord Map</title>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>TransNord Live Map</title>
+
+  <!-- Leaflet CSS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Segoe UI', Arial, sans-serif;
+      background: #1a1a2e;
+      color: #e0e0e0;
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+    }
+
+    /* ── Header ── */
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 20px;
+      background: #16213e;
+      border-bottom: 2px solid #0f3460;
+      flex-shrink: 0;
+    }
+
+    header h1 {
+      font-size: 1.3rem;
+      color: #e94560;
+      letter-spacing: 1px;
+    }
+
+    #status-bar {
+      font-size: 0.8rem;
+      color: #aaa;
+    }
+
+    #status-bar span {
+      color: #2ecc71;
+      font-weight: bold;
+    }
+
+    /* ── Layout ── */
+    main {
+      display: flex;
+      flex: 1;
+      overflow: hidden;
+    }
+
+    /* ── Sidebar ── */
+    #sidebar {
+      width: 280px;
+      background: #16213e;
+      border-right: 1px solid #0f3460;
+      overflow-y: auto;
+      flex-shrink: 0;
+      padding: 12px;
+    }
+
+    #sidebar h2 {
+      font-size: 0.85rem;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: #aaa;
+      margin-bottom: 10px;
+    }
+
+    .driver-card {
+      background: #0f3460;
+      border-radius: 8px;
+      padding: 10px 12px;
+      margin-bottom: 8px;
+      cursor: pointer;
+      transition: background 0.2s;
+      border-left: 4px solid transparent;
+    }
+
+    .driver-card:hover { background: #1a4a80; }
+    .driver-card.online  { border-left-color: #2ecc71; }
+    .driver-card.offline { border-left-color: #e74c3c; }
+
+    .driver-card .d-name {
+      font-weight: bold;
+      font-size: 0.95rem;
+      margin-bottom: 4px;
+    }
+
+    .driver-card .d-meta {
+      font-size: 0.75rem;
+      color: #aaa;
+      line-height: 1.5;
+    }
+
+    .badge {
+      display: inline-block;
+      padding: 1px 6px;
+      border-radius: 10px;
+      font-size: 0.7rem;
+      font-weight: bold;
+      margin-bottom: 4px;
+    }
+
+    .badge.online  { background: #1a5c38; color: #2ecc71; }
+    .badge.offline { background: #5c1a1a; color: #e74c3c; }
+
+    /* ── Map ── */
+    #map {
+      flex: 1;
+    }
+
+    /* ── Leaflet popup tweaks ── */
+    .leaflet-popup-content-wrapper {
+      background: #16213e;
+      color: #e0e0e0;
+      border: 1px solid #0f3460;
+      border-radius: 8px;
+    }
+
+    .leaflet-popup-tip { background: #16213e; }
+
+    .popup-title {
+      font-weight: bold;
+      font-size: 1rem;
+      margin-bottom: 6px;
+      color: #e94560;
+    }
+
+    .popup-row {
+      font-size: 0.8rem;
+      margin: 2px 0;
+      color: #ccc;
+    }
+
+    .popup-row strong { color: #e0e0e0; }
+
+    /* ── Footer ── */
+    footer {
+      text-align: center;
+      font-size: 0.72rem;
+      color: #555;
+      padding: 6px;
+      background: #16213e;
+      border-top: 1px solid #0f3460;
+      flex-shrink: 0;
+    }
+  </style>
 </head>
 <body>
-    <h1>Live Map Fahrer</h1>
-    <div id="map" style="width:100%; height:600px;"></div>
-    <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
-    <script>
-        var map = L.map('map').setView([51.1657, 10.4515], 6); // Deutschland
-        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-            attribution: '© OpenStreetMap contributors'
-        }).addTo(map);
-    </script>
+
+<header>
+  <h1>🚛 TransNord Live Map</h1>
+  <div id="status-bar">
+    Auto-refresh in <span id="countdown">30</span>s &nbsp;|&nbsp;
+    Last update: <span id="last-update">—</span>
+  </div>
+</header>
+
+<main>
+  <aside id="sidebar">
+    <h2>Drivers</h2>
+    <div id="driver-list">
+      <p style="color:#555;font-size:0.8rem;">Loading…</p>
+    </div>
+  </aside>
+
+  <div id="map"></div>
+</main>
+
+<footer>
+  TransNord Convoy Tracker &nbsp;•&nbsp; Data from TruckersMP API &nbsp;•&nbsp; Map © OpenStreetMap contributors
+</footer>
+
+<!-- Leaflet JS -->
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+<script>
+  // ── Map initialisation ──────────────────────────────────────────────────
+  const map = L.map('map').setView([51.5, 10.0], 5);
+
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+    maxZoom: 18,
+  }).addTo(map);
+
+  // ── Marker store ────────────────────────────────────────────────────────
+  const markers = {};   // name → L.marker
+
+  function makeIcon(online) {
+    return L.divIcon({
+      className: '',
+      html: `<div style="
+        width: 14px; height: 14px;
+        border-radius: 50%;
+        background: ${online ? '#2ecc71' : '#e74c3c'};
+        border: 2px solid #fff;
+        box-shadow: 0 0 6px rgba(0,0,0,.6);
+      "></div>`,
+      iconSize:   [14, 14],
+      iconAnchor: [7, 7],
+      popupAnchor:[0, -10],
+    });
+  }
+
+  function popupHtml(d) {
+    const loc = (d.lat != null && d.lon != null)
+      ? `${parseFloat(d.lat).toFixed(4)}, ${parseFloat(d.lon).toFixed(4)}`
+      : '—';
+    const updated = d.updated_at
+      ? new Date(d.updated_at).toLocaleTimeString()
+      : '—';
+    return `
+      <div class="popup-title">🚛 ${d.name}</div>
+      <div class="popup-row"><strong>Status:</strong> ${d.online ? '🟢 Online' : '🔴 Offline'}</div>
+      <div class="popup-row"><strong>Server:</strong> ${d.server || '—'}</div>
+      <div class="popup-row"><strong>Location:</strong> ${loc}</div>
+      <div class="popup-row"><strong>Updated:</strong> ${updated}</div>
+      ${d.id ? `<div class="popup-row" style="margin-top:6px">
+        <a href="https://truckersmp.com/user/${d.id}" target="_blank"
+           style="color:#e94560;">TruckersMP profile ↗</a>
+      </div>` : ''}
+    `;
+  }
+
+  // ── Sidebar card ────────────────────────────────────────────────────────
+  function cardHtml(d) {
+    const cls   = d.online ? 'online' : 'offline';
+    const badge = d.online ? '🟢 Online' : '🔴 Offline';
+    const loc   = (d.lat != null && d.lon != null)
+      ? `${parseFloat(d.lat).toFixed(4)}, ${parseFloat(d.lon).toFixed(4)}`
+      : '—';
+    return `
+      <div class="driver-card ${cls}" data-name="${d.name}">
+        <div class="d-name">${d.name}</div>
+        <span class="badge ${cls}">${badge}</span>
+        <div class="d-meta">
+          🖥 ${d.server || '—'}<br>
+          📍 ${loc}
+        </div>
+      </div>
+    `;
+  }
+
+  // ── Fetch & render ──────────────────────────────────────────────────────
+  async function refresh() {
+    let drivers;
+    try {
+      const res = await fetch('/api/drivers');
+      drivers = await res.json();
+    } catch (e) {
+      console.warn('Failed to fetch /api/drivers:', e);
+      return;
+    }
+
+    // Update sidebar
+    const list = document.getElementById('driver-list');
+    if (drivers.length === 0) {
+      list.innerHTML = '<p style="color:#555;font-size:0.8rem;">No driver data yet.</p>';
+    } else {
+      list.innerHTML = drivers.map(cardHtml).join('');
+      // Click card → pan to marker
+      list.querySelectorAll('.driver-card').forEach(card => {
+        card.addEventListener('click', () => {
+          const name = card.dataset.name;
+          if (markers[name]) {
+            map.setView(markers[name].getLatLng(), 9, { animate: true });
+            markers[name].openPopup();
+          }
+        });
+      });
+    }
+
+    // Update markers
+    const seen = new Set();
+    drivers.forEach(d => {
+      if (d.lat == null || d.lon == null) return;
+      const lat = parseFloat(d.lat);
+      const lon = parseFloat(d.lon);
+      seen.add(d.name);
+
+      if (markers[d.name]) {
+        markers[d.name].setLatLng([lat, lon]);
+        markers[d.name].setIcon(makeIcon(d.online));
+        markers[d.name].setPopupContent(popupHtml(d));
+      } else {
+        markers[d.name] = L.marker([lat, lon], { icon: makeIcon(d.online) })
+          .bindPopup(popupHtml(d))
+          .addTo(map);
+      }
+    });
+
+    // Remove markers for drivers no longer in the list
+    Object.keys(markers).forEach(name => {
+      if (!seen.has(name)) {
+        map.removeLayer(markers[name]);
+        delete markers[name];
+      }
+    });
+
+    // Update last-update timestamp
+    document.getElementById('last-update').textContent =
+      new Date().toLocaleTimeString();
+  }
+
+  // ── Countdown & auto-refresh ────────────────────────────────────────────
+  const REFRESH_INTERVAL = 30;   // seconds — matches POLL_INTERVAL in bot.py
+  let secondsLeft = REFRESH_INTERVAL;
+
+  function tick() {
+    secondsLeft--;
+    document.getElementById('countdown').textContent = secondsLeft;
+    if (secondsLeft <= 0) {
+      secondsLeft = REFRESH_INTERVAL;
+      refresh();
+    }
+  }
+
+  // Initial load, then tick every second
+  refresh();
+  setInterval(tick, 1000);
+</script>
 </body>
 </html>
+
